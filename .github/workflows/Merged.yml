@@ -1,70 +1,35 @@
-const fs = require("fs");
-const path = require("path");
+name: Merge English-Only M3U
 
-// ----- English detection -----
-function isEnglish(text) {
-  return /^[\x00-\x7F]+$/.test(text);
-}
+on:
+  schedule:
+    - cron: "*/30 * * * *"  # every 30 minutes
+  workflow_dispatch:
 
-function filterEnglishOnly(lines) {
-  const filtered = [];
-  let includeNext = false;
+jobs:
+  merge:
+    runs-on: ubuntu-latest
 
-  for (let line of lines) {
-    if (line.startsWith("#EXTINF")) {
-      const nameMatch = line.match(/,(.*)$/);
-      const displayName = nameMatch ? nameMatch[1].trim() : "";
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
-      if (isEnglish(displayName)) {
-        includeNext = true;
-        filtered.push(line);
-      } else {
-        includeNext = false;
-      }
-    } else if (line.startsWith("http")) {
-      if (includeNext) filtered.push(line);
-    } else {
-      if (line.startsWith("#EXTM3U")) filtered.push(line);
-    }
-  }
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: "20"
 
-  return filtered;
-}
+      - name: Install dependencies
+        run: npm ci || npm install
 
-// ----- Merge playlists -----
-function mergePlaylists(files, outputFile) {
-  let merged = ["#EXTM3U"];
-
-  for (let file of files) {
-    const filePath = path.resolve(file);
-    if (!fs.existsSync(filePath)) {
-      console.warn(`⚠️  Playlist file not found: ${file}`);
-      continue;
-    }
-    const lines = fs.readFileSync(filePath, "utf-8").split("\n");
-    merged = merged.concat(lines.filter(line => !line.startsWith("#EXTM3U")));
-  }
-
-  // Apply English-only filter
-  const englishOnly = filterEnglishOnly(merged);
-
-  fs.writeFileSync(outputFile, englishOnly.join("\n"), "utf-8");
-  console.log(`✅ Merged playlist saved to ${outputFile} (English only)`);
-}
-
-// ----- Main execution -----
-try {
-  // Find all .m3u files in repo
-  const playlists = fs.readdirSync(".").filter(f => f.endsWith(".m3u"));
-  if (playlists.length === 0) {
-    console.error("❌ No .m3u files found in repo");
-    process.exit(1);
-  }
-
-  // Merge all found playlists into merged.m3u
-  mergePlaylists(playlists, "merged.m3u");
-
-} catch (err) {
-  console.error("❌ Error running merge.js:", err);
-  process.exit(1);
-}
+      - name: Find merge.js and run
+        run: |
+          echo "➡️ Searching for merge.js..."
+          MERGE_FILE=$(find . -name "merge.js" -type f | head -n 1)
+          if [ -z "$MERGE_FILE" ]; then
+            echo "❌ merge.js not found!"
+            exit 1
+          fi
+          echo "➡️ Found merge.js at $MERGE_FILE"
+          echo "➡️ Running merge.js..."
+          node "$MERGE_FILE"
+          echo "✅ Merged playlist generated (English only)"
